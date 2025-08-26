@@ -244,12 +244,71 @@
             lastExport: null
         };
         
+        // Регистрация Service Worker
+        async function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker зарегистрирован:', registration);
+                    
+                    // Проверяем, есть ли кэшированная версия
+                    if (registration.installing) {
+                        console.log('Service Worker устанавливается');
+                    } else if (registration.waiting) {
+                        console.log('Service Worker ожидает');
+                    } else if (registration.active) {
+                        console.log('Service Worker активен');
+                    }
+                } catch (error) {
+                    console.error('Ошибка регистрации Service Worker:', error);
+                }
+            }
+        }
+        
+        // Проверка кэшированного состояния
+        function checkCachedState() {
+            if (!navigator.onLine) {
+                console.log('Работаем в оффлайн-режиме');
+                updateConnectionStatus();
+                
+                // Показываем оффлайн-уведомление
+                showOfflineNotification();
+            }
+        }
+        
+        function showOfflineNotification() {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #ff9800;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 20px;
+                z-index: 10000;
+                font-size: 14px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            `;
+            notification.textContent = '🔌 Работаем оффлайн';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+        
         // Инициализация
-        function init() {
+        async function init() {
+            // Сначала регистрируем Service Worker
+            await registerServiceWorker();
+            
             loadData();
             updateConnectionStatus();
             updateCurrentTime();
             renderParticipants();
+            checkCachedState();
             
             tg.expand();
             tg.enableClosingConfirmation();
@@ -257,10 +316,44 @@
             setInterval(updateCurrentTime, 1000);
             setInterval(updateConnectionStatus, 5000);
             
+            // Слушаем изменения онлайн-статуса
+            window.addEventListener('online', () => {
+                updateConnectionStatus();
+                showOnlineNotification();
+            });
+            
+            window.addEventListener('offline', () => {
+                updateConnectionStatus();
+                showOfflineNotification();
+            });
+            
             // Фокус на поле ввода
             document.getElementById('participantNumberInput').focus();
         }
         
+        function showOnlineNotification() {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #4CAF50;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 20px;
+                z-index: 10000;
+                font-size: 14px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            `;
+            notification.textContent = '🌐 Онлайн соединение восстановлено';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+                
         function loadData() {
             const saved = localStorage.getItem('kp_tracking_data');
             if (saved) {
