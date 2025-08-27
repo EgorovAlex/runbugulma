@@ -1,8 +1,8 @@
 {
   "short_name": "Отметка КП",
   "name": "Система отметки на контрольных пунктах",
-  "description": "Приложение для волонтеров",
-  "start_url": "/",
+  "description": "Оффлайн-приложение для волонтеров спортивных мероприятий",
+  "start_url": "/runbugulma/",
   "display": "standalone",
   "theme_color": "#3498db",
   "background_color": "#ffffff",
@@ -23,5 +23,6 @@
   ],
   "categories": ["sports", "productivity"],
   "lang": "ru",
-  "scope": "/"
+  "scope": "/runbugulma/",
+  "offline_enabled": true
 }

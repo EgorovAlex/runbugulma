@@ -5,16 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Система отметки на КП</title>
     
-    <!-- Подключаем стили -->
+    <!-- Preload важных ресурсов -->
+    <link rel="preload" href="styles.css" as="style">
+    <link rel="preload" href="images/icon-192.png" as="image">
+    
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="images/icon-192.png">
     <link rel="apple-touch-icon" href="images/icon-192.png">
     
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <style>
+        /* Inline критический CSS для первой загрузки */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: white;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Overlay для загрузки -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div>Загрузка приложения...</div>
+    </div>
+
+    <div class="container" style="display:none;">
         <div id="offlineIndicator">🔌 Оффлайн режим</div>
         <div id="platformIndicator">Platform: <span id="platformType">Detecting...</span></div>
         
@@ -42,15 +84,6 @@
                 <button class="button button-secondary" onclick="changeKp()">✏️ Сменить КП</button>
             </div>
             
-            <div class="stats-card">
-                <h4>📊 Прогресс по КП</h4>
-                <div class="progress-bar">
-                    <div id="progressFill" class="progress-fill" style="width: 0%"></div>
-                </div>
-                <p>Отмечено: <span id="passedCount">0</span> / <span id="totalCount">0</span></p>
-                <p id="completionPercent">0%</p>
-            </div>
-            
             <div class="input-section">
                 <input type="number" id="participantNumberInput" class="number-input" 
                        placeholder="Введите номер участника" min="1" onkeypress="handleKeyPress(event)">
@@ -73,6 +106,15 @@
                 <button class="button button-success" onclick="submitNumber()">✅ Зафиксировать прохождение</button>
             </div>
             
+            <div class="stats-card">
+                <h4>📊 Прогресс по КП</h4>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <p>Отмечено: <span id="passedCount">0</span> / <span id="totalCount">0</span> ( <span id="completionPercent">0%</span> )
+				</p>                
+            </div>
+            
             <div>
                 <h3>📝 Отмеченные участники:</h3>
                 <div id="participantsList" class="participants-list"></div>
@@ -86,6 +128,7 @@
     </div>
 
     <script>
+        // Глобальные переменные
         const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/ВАШ_GAS_ID/exec';
         let tg = window.Telegram.WebApp;
         let eventData = {
@@ -99,30 +142,190 @@
         let isSyncing = false;
         let syncQueue = [];
         let currentChatId = null;
-        
+        let isAppReady = false;
+
+        // Проверка поддержки Service Worker
+        function isServiceWorkerSupported() {
+            return 'serviceWorker' in navigator && 'caches' in window;
+        }
+
+        // Регистрация Service Worker с улучшенной логикой
+        async function registerServiceWorker() {
+            if (!isServiceWorkerSupported()) {
+                console.log('Service Worker не поддерживается');
+                return false;
+            }
+
+            try {
+                const registration = await navigator.serviceWorker.register('/sw.js', {
+                    scope: '/',
+                    updateViaCache: 'none'
+                });
+
+                console.log('Service Worker зарегистрирован:', registration);
+
+                // Ждем пока SW станет активным
+                if (registration.installing) {
+                    await new Promise(resolve => {
+                        registration.installing.addEventListener('statechange', event => {
+                            if (event.target.state === 'activated') {
+                                resolve();
+                            }
+                        });
+                    });
+                }
+
+                return true;
+            } catch (error) {
+                console.error('Ошибка регистрации Service Worker:', error);
+                return false;
+            }
+        }
+
+        // Проверка кэширования
+        async function checkCache() {
+            if (!isServiceWorkerSupported()) return false;
+
+            try {
+                const cache = await caches.open('sport-event-cache-v5');
+                const keys = await cache.keys();
+                const hasIndexHtml = keys.some(request => 
+                    request.url.includes('index.html') || 
+                    request.url.endsWith('/')
+                );
+                
+                console.log('Кэшированные ресурсы:', keys.map(k => k.url));
+                return hasIndexHtml;
+            } catch (error) {
+                console.error('Ошибка проверки кэша:', error);
+                return false;
+            }
+        }
+
+        // Загрузка оффлайн данных
+        async function loadOfflineData() {
+            try {
+                // Пробуем загрузить кэшированные данные события
+                const cachedData = localStorage.getItem('cached_event_data');
+                if (cachedData) {
+                    eventData.eventInfo = JSON.parse(cachedData);
+                    updateEventUI();
+                }
+
+                // Пробуем загрузить локальные данные
+                const saved = localStorage.getItem('kp_tracking_data');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    eventData.participants = parsed.participants || [];
+                    eventData.kpNumber = parsed.kpNumber || 1;
+                    
+                    updateKpInfo();
+                    updateParticipantsCount();
+                    renderParticipants();
+                }
+
+                return true;
+            } catch (error) {
+                console.error('Ошибка загрузки оффлайн данных:', error);
+                return false;
+            }
+        }
+
+        // Показать оффлайн интерфейс
+        function showOfflineInterface() {
+            document.getElementById('eventName').textContent = 'Оффлайн режим';
+            document.getElementById('kpName').textContent = 'Данные загружены из кэша';
+            
+            const statsCard = document.querySelector('.stats-card');
+            if (statsCard) {
+                statsCard.innerHTML = `
+                    <h4>📴 Оффлайн режим</h4>
+                    <p>Приложение работает без интернета</p>
+                    <p>Данные будут синхронизированы автоматически при подключении</p>
+                `;
+            }
+        }
+
         // Инициализация приложения
         async function init() {
-            tg.expand();
-            tg.enableClosingConfirmation();
-            tg.ready();
-            
-            currentChatId = tg.initDataUnsafe.user?.id || tg.initDataUnsafe.chat?.id;
-            
-            detectPlatform();
-            loadData();
-            updateConnectionStatus();
-            updateCurrentTime();
-            
-            setInterval(updateCurrentTime, 1000);
-            setInterval(updateConnectionStatus, 5000);
-            
-            // Загружаем данные события
-            await loadEventData();
-            
-            document.getElementById('participantNumberInput').focus();
-            
-            // Регистрируем Service Worker
-            await registerServiceWorker();
+            console.log('Инициализация приложения...');
+
+            // Сначала показываем overlay
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const container = document.querySelector('.container');
+
+            try {
+                // Проверяем онлайн статус
+                const isOnline = navigator.onLine;
+                console.log('Онлайн статус:', isOnline);
+
+                // Регистрируем Service Worker
+                const swRegistered = await registerServiceWorker();
+                console.log('SW зарегистрирован:', swRegistered);
+
+                // Проверяем кэш
+                const hasCache = await checkCache();
+                console.log('Есть кэш:', hasCache);
+
+                // Если оффлайн и нет кэша - показываем ошибку
+                if (!isOnline && !hasCache) {
+                    loadingOverlay.innerHTML = `
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 20px;">📵</div>
+                            <h2>Нет подключения</h2>
+                            <p>Требуется интернет для первой загрузки приложения</p>
+                            <p>Подключитесь к интернету и попробуйте снова</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Инициализируем Telegram WebApp
+                if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+                    tg = Telegram.WebApp;
+                    tg.expand();
+                    tg.enableClosingConfirmation();
+                    tg.ready();
+                    
+                    currentChatId = tg.initDataUnsafe.user?.id || tg.initDataUnsafe.chat?.id;
+                    console.log('Telegram WebApp инициализирован');
+                }
+
+                // Загружаем данные
+                if (isOnline) {
+                    await loadEventData();
+                } else {
+                    await loadOfflineData();
+                    showOfflineInterface();
+                }
+
+                // Показываем основное приложение
+                loadingOverlay.style.display = 'none';
+                container.style.display = 'block';
+                
+                // Обновляем UI
+                updateConnectionStatus();
+                updateCurrentTime();
+                
+                // Устанавливаем интервалы
+                setInterval(updateCurrentTime, 1000);
+                setInterval(updateConnectionStatus, 5000);
+
+                // Фокус на поле ввода
+                const input = document.getElementById('participantNumberInput');
+                if (input) input.focus();
+
+                isAppReady = true;
+                console.log('Приложение успешно инициализировано');
+
+            } catch (error) {
+                console.error('Ошибка инициализации:', error);
+                
+                // Fallback: показываем базовый интерфейс
+                loadingOverlay.style.display = 'none';
+                container.style.display = 'block';
+                showOfflineInterface();
+            }
         }
         
         // Регистрация Service Worker
@@ -472,22 +675,21 @@
             }
         }
         
-        // Обновление статуса соединения
+        // Обработчик онлайн/оффлайн статуса
         function updateConnectionStatus() {
             const statusElement = document.getElementById('connectionStatus');
             const offlineIndicator = document.getElementById('offlineIndicator');
-            const wasOffline = statusElement.textContent.includes('Оффлайн');
-            const isNowOnline = navigator.onLine;
+            const isOnline = navigator.onLine;
             
-            statusElement.textContent = navigator.onLine ? '🌐 Онлайн' : '🔌 Оффлайн';
-            statusElement.style.color = navigator.onLine ? '#2ecc71' : '#e74c3c';
+            statusElement.textContent = isOnline ? '🌐 Онлайн' : '🔌 Оффлайн';
+            statusElement.style.color = isOnline ? '#2ecc71' : '#e74c3c';
             
             if (offlineIndicator) {
-                offlineIndicator.style.display = navigator.onLine ? 'none' : 'block';
+                offlineIndicator.style.display = isOnline ? 'none' : 'block';
             }
             
             // Автоматическая синхронизация при появлении интернета
-            if (wasOffline && isNowOnline && eventData.participants.length > 0 && !isSyncing) {
+            if (isOnline && eventData.participants.length > 0 && !isSyncing && isAppReady) {
                 setTimeout(() => {
                     if (confirm('Интернет доступен! Синхронизировать данные?')) {
                         syncWithBot();
@@ -536,13 +738,17 @@
             }
         }
         
-        // Запуск приложения
-        document.addEventListener('DOMContentLoaded', init);
-        
-        // Обработчики событий
-        window.addEventListener('resize', detectPlatform);
+        // Запуск при загрузке
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+
+        // Глобальные обработчики
         window.addEventListener('online', updateConnectionStatus);
         window.addEventListener('offline', updateConnectionStatus);
+        window.addEventListener('resize', detectPlatform);
     </script>
 </body>
 </html>
