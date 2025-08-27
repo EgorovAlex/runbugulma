@@ -1,74 +1,103 @@
-// sw.js - Service Worker для кэширования приложения
-const CACHE_NAME = 'sport-event-kp-v1';
+const CACHE_NAME = 'runbugulma-cache-v2';
 const urlsToCache = [
   './',
-  './index.html'
+  './index.html',
+  './styles.css',
+  './manifest.json',
+  './images/icon-192.png',
+  './images/icon-512.png'
 ];
 
-// Установка Service Worker
-self.addEventListener('install', function(event) {
+self.addEventListener('install', event => {
+  console.log('Service Worker: Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(function(cache) {
-        console.log('Кэшируем файлы для оффлайн работы');
+      .then(cache => {
+        console.log('Service Worker: Caching app shell');
         return cache.addAll(urlsToCache);
       })
-      .then(() => self.skipWaiting())
+      .then(() => {
+        console.log('Service Worker: Skip waiting');
+        return self.skipWaiting();
+      })
   );
 });
 
-// Активация Service Worker
-self.addEventListener('activate', function(event) {
+self.addEventListener('activate', event => {
+  console.log('Service Worker: Activating...');
   event.waitUntil(
-    caches.keys().then(function(cacheNames) {
+    caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(function(cacheName) {
+        cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Удаляем старый кэш:', cacheName);
+            console.log('Service Worker: Deleting old cache', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      console.log('Service Worker: Claiming clients');
+      return self.clients.claim();
     })
   );
 });
 
-// Обработка запросов
-self.addEventListener('fetch', function(event) {
-  // Только GET запросы
-  if (event.request.method !== 'GET') return;
-  
+self.addEventListener('fetch', event => {
+  // Пропускаем запросы к внешним API
+  if (event.request.url.includes('telegram.org') || 
+      event.request.url.includes('script.google.com') ||
+      event.request.url.includes('api.telegram.org')) {
+    return fetch(event.request);
+  }
+
   event.respondWith(
     caches.match(event.request)
-      .then(function(response) {
-        // Возвращаем кэш если есть
+      .then(response => {
+        // Возвращаем из кэша если есть
         if (response) {
+          console.log('Service Worker: Serving from cache', event.request.url);
           return response;
         }
         
         // Иначе загружаем из сети
-        return fetch(event.request).then(function(response) {
-          // Кэшируем только успешные ответы
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+        console.log('Service Worker: Fetching from network', event.request.url);
+        return fetch(event.request).then(networkResponse => {
+          // Проверяем валидность ответа
+          if (!networkResponse || networkResponse.status !== 200 || 
+              networkResponse.type !== 'basic') {
+            return networkResponse;
           }
           
-          // Клонируем ответ для кэширования
-          const responseToCache = response.clone();
-          
+          // Клонируем для кэширования
+          const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME)
-            .then(function(cache) {
+            .then(cache => {
               cache.put(event.request, responseToCache);
+              console.log('Service Worker: Caching new resource', event.request.url);
             });
           
-          return response;
+          return networkResponse;
         });
       })
-      .catch(function() {
-        // Fallback для оффлайн режима
-        if (event.request.url.includes('telegram.org')) {
-          return new Response('', { status: 200 });
+      .catch(() => {
+        // Fallback для offline
+        if (event.request.url.endsWith('.html') || 
+            event.request.url === self.location.origin + '/') {
+          return caches.match('./index.html');
         }
+        
+        // Fallback для других ресурсов
+        return new Response('Offline mode', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: new Headers({ 'Content-Type': 'text/plain' })
+        });
       })
   );
+});
+
+self.addEventListener('message', event => {
+  if (event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
 });
