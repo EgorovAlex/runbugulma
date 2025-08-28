@@ -1,255 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Система отметки на КП</title>
-    
-    <!-- Inline critical CSS -->
-    <style>
-        /* Базовые стили для немедленной отрисовки */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #ffffff; color: #222222; 
-            margin: 0; padding: 16px; max-width: 100vw;
-        }
-        .container { max-width: 100%; margin: 0 auto; }
-        .header { 
-            text-align: center; margin-bottom: 20px; padding: 15px;
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white; border-radius: 15px; width: 100%;
-        }
-        .loading { 
-            text-align: center; padding: 50px 20px; 
-            font-size: 18px; color: #666;
-        }
-        .offline-warning {
-            background: #e74c3c; color: white; padding: 10px;
-            border-radius: 10px; text-align: center; margin: 10px 0;
-        }
-    </style>
-    
-    <!-- Preload resources -->
-    <link rel="preload" href="styles.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link rel="stylesheet" href="styles.css"></noscript>
-    
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
-    
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Offline Athlete Logger</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:12px;}
+    .offline{color:darkred;}
+    .online{color:green;}
+    input[type="text"]{padding:8px;width:160px;}
+    button{padding:8px;margin-left:6px;}
+    li{margin:6px 0;}
+    .meta{font-size:0.9em;color:#666;}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📋 Система отметки на КП</h1>
-            <p id="appStatus">Загрузка приложения...</p>
-        </div>
+  <h2>Запись номеров (офлайн)</h2>
+  <div>Статус сети: <span id="netStatus"></span></div>
+  <div style="margin-top:10px;">
+    <input id="num" type="text" placeholder="Номер спортсмена" />
+    <button id="addBtn">Добавить</button>
+    <button id="exportBtn">Экспорт JSON</button>
+    <button id="clearBtn">Очистить</button>
+  </div>
+  <ul id="list"></ul>
 
-        <div id="loading" class="loading">
-            <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
-            <p>Идет загрузка приложения</p>
-            <p id="loadDetails">Пожалуйста, подождите...</p>
-        </div>
-
-        <div id="offlineWarning" class="offline-warning" style="display: none;">
-            🔌 Оффлайн режим - данные сохраняются локально
-        </div>
-
-        <div id="appContent" style="display: none;">
-            <!-- Основной контент приложения -->
-            <div class="kp-info">
-                <h3>Контрольный пункт №<span id="currentKp">1</span></h3>
-                <button onclick="changeKp()">✏️ Сменить КП</button>
-            </div>
-            
-            <input type="number" id="participantNumberInput" placeholder="Номер участника">
-            <button onclick="submitNumber()">✅ Отметить</button>
-            
-            <div id="participantsList"></div>
-            <button onclick="syncWithBot()">🔄 Синхронизировать</button>
-        </div>
-
-        <div id="error" style="display: none; text-align: center; padding: 50px 20px;">
-            <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
-            <h2>Ошибка загрузки</h2>
-            <p>Попробуйте открыть приложение с интернетом</p>
-            <button onclick="location.reload()">🔄 Обновить</button>
-        </div>
-    </div>
-
-    <script>
-        // Глобальные переменные
-        const APP_VERSION = '1.0.0';
-        let isOnline = navigator.onLine;
-        let appData = {
-            kpNumber: 1,
-            participants: [],
-            lastUpdate: Date.now()
-        };
-
-        // Быстрая инициализация
-        async function quickInit() {
-            console.log('Быстрая инициализация приложения');
-            
-            // Немедленно показываем базовый интерфейс
-            document.getElementById('appStatus').textContent = 'Оффлайн режим';
-            document.getElementById('loadDetails').textContent = 'Загрузка локальных данных...';
-            
-            // Пытаемся загрузить локальные данные
-            try {
-                const saved = localStorage.getItem('kp_app_data');
-                if (saved) {
-                    appData = JSON.parse(saved);
-                    console.log('Локальные данные загружены');
-                }
-            } catch (e) {
-                console.error('Ошибка загрузки локальных данных:', e);
-            }
-
-            // Показываем оффлайн предупреждение
-            if (!isOnline) {
-                document.getElementById('offlineWarning').style.display = 'block';
-            }
-
-            // Быстро показываем основной интерфейс
-            setTimeout(() => {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('appContent').style.display = 'block';
-                initAppLogic();
-            }, 500);
-        }
-
-        // Основная логика приложения
-        function initAppLogic() {
-            console.log('Инициализация логики приложения');
-            
-            // Обновляем интерфейс
-            updateKpInfo();
-            renderParticipants();
-            updateConnectionStatus();
-
-            // Устанавливаем обработчики
-            setInterval(updateConnectionStatus, 3000);
-            
-            // Фокус на поле ввода
-            const input = document.getElementById('participantNumberInput');
-            if (input) input.focus();
-        }
-
-        // Простые функции приложения
-        function updateKpInfo() {
-            document.getElementById('currentKp').textContent = appData.kpNumber;
-        }
-
-        function updateConnectionStatus() {
-            isOnline = navigator.onLine;
-            document.getElementById('offlineWarning').style.display = isOnline ? 'none' : 'block';
-        }
-
-        function submitNumber() {
-            const input = document.getElementById('participantNumberInput');
-            const number = input.value.trim();
-            
-            if (!number) return;
-            
-            const participant = {
-                number: number,
-                kp: appData.kpNumber,
-                timestamp: new Date().toISOString(),
-                time: new Date().toLocaleTimeString('ru-RU')
-            };
-            
-            appData.participants.push(participant);
-            saveData();
-            renderParticipants();
-            
-            input.value = '';
-            input.focus();
-            
-            alert('Участник №' + number + ' отмечен!');
-        }
-
-        function renderParticipants() {
-            const container = document.getElementById('participantsList');
-            if (!container) return;
-            
-            const kpParticipants = appData.participants.filter(p => p.kp === appData.kpNumber);
-            
-            if (kpParticipants.length === 0) {
-                container.innerHTML = '<p>Нет отмеченных участников</p>';
-                return;
-            }
-            
-            container.innerHTML = kpParticipants.map(p => 
-                `<div>№${p.number} - ${p.time}</div>`
-            ).join('');
-        }
-
-        function saveData() {
-            try {
-                localStorage.setItem('kp_app_data', JSON.stringify(appData));
-            } catch (e) {
-                console.error('Ошибка сохранения:', e);
-            }
-        }
-
-        function changeKp() {
-            const newKp = prompt('Номер КП:', appData.kpNumber);
-            if (newKp && !isNaN(newKp)) {
-                appData.kpNumber = parseInt(newKp);
-                saveData();
-                updateKpInfo();
-                renderParticipants();
-            }
-        }
-
-        function syncWithBot() {
-            if (!isOnline) {
-                alert('Требуется интернет для синхронизации');
-                return;
-            }
-            alert('Синхронизация запущена');
-            // Здесь будет логика синхронизации
-        }
-
-        // Обработка ошибок
-        window.addEventListener('error', function(e) {
-            console.error('Global error:', e.error);
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('error').style.display = 'block';
-        });
-
-        // Запуск приложения
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM загружен, запускаем приложение');
-            
-            // Быстрая инициализация без ожидания
-            setTimeout(quickInit, 100);
-            
-            // Пытаемся зарегистрировать SW в фоне
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => console.log('SW registered'))
-                    .catch(err => console.log('SW registration failed:', err));
-            }
-        });
-
-        // Обработчики онлайн/оффлайн
-        window.addEventListener('online', () => {
-            isOnline = true;
-            updateConnectionStatus();
-            console.log('Online');
-        });
-
-        window.addEventListener('offline', () => {
-            isOnline = false;
-            updateConnectionStatus();
-            console.log('Offline');
-        });
-    </script>
-
-    <!-- External CSS loaded after critical content -->
-    <link rel="stylesheet" href="styles.css" media="print" onload="this.media='all'">
+  <script src="app.js"></script>
 </body>
 </html>
