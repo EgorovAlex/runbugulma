@@ -1,30 +1,80 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Offline Athlete Logger</title>
-  <style>
-    body{font-family:Arial,Helvetica,sans-serif;margin:12px;}
-    .offline{color:darkred;}
-    .online{color:green;}
-    input[type="text"]{padding:8px;width:160px;}
-    button{padding:8px;margin-left:6px;}
-    li{margin:6px 0;}
-    .meta{font-size:0.9em;color:#666;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Система отметки на КП</title>
+    
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="images/icon-192.png">
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <h2>Запись номеров (офлайн)</h2>
-  <div>Статус сети: <span id="netStatus"></span></div>
-  <div style="margin-top:10px;">
-    <input id="num" type="text" placeholder="Номер спортсмена" />
-    <button id="addBtn">Добавить</button>
-    <button id="exportBtn">Экспорт JSON</button>
-    <button id="clearBtn">Очистить</button>
-  </div>
-  <ul id="list"></ul>
+    <div class="container">
+        <div id="offlineIndicator" class="offline-indicator hidden">🔌 Оффлайн</div>
+        
+        <div class="header">
+            <h1>📋 Система отметки</h1>
+            <p id="eventName">Соревнования</p>
+        </div>
+        
+        <div class="status-bar">
+            <span id="connectionStatus">🌐 Онлайн</span>
+            <span id="participantsCount">Участников: 0</span>
+            <span id="currentTime">--:--:--</span>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">Контрольный пункт</div>
+            <select id="kpSelect" class="kp-selector">
+                <option value="">Загрузка...</option>
+            </select>
+            
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="text-center">
+                <span id="passedCount">0</span>/<span id="totalCount">0</span> участников
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">Отметка участника</div>
+            <input type="number" id="participantInput" class="number-input" placeholder="Номер участника" min="1">
+            
+            <div class="quick-buttons">
+                <div class="quick-button" onclick="addDigit('1')">1</div>
+                <div class="quick-button" onclick="addDigit('2')">2</div>
+                <div class="quick-button" onclick="addDigit('3')">3</div>
+                <div class="quick-button" onclick="addDigit('4')">4</div>
+                <div class="quick-button" onclick="addDigit('5')">5</div>
+                <div class="quick-button" onclick="addDigit('6')">6</div>
+                <div class="quick-button" onclick="addDigit('7')">7</div>
+                <div class="quick-button" onclick="addDigit('8')">8</div>
+                <div class="quick-button" onclick="addDigit('9')">9</div>
+                <div class="quick-button" onclick="addDigit('0')">0</div>
+                <div class="quick-button" onclick="clearInput()">⌫</div>
+                <div class="quick-button" onclick="markParticipant()">✅</div>
+            </div>
+            
+            <button class="btn btn-success" onclick="markParticipant()">Отметить участника</button>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">Отмеченные участники</div>
+            <div id="participantsList" class="participants-list">
+                <p class="text-center">Нет отмеченных участников</p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                <button class="btn btn-warning" onclick="syncData()">🔄 Синхронизировать</button>
+                <button class="btn btn-danger" onclick="clearData()">🗑️ Очистить</button>
+            </div>
+        </div>
+    </div>
 
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
