@@ -1,80 +1,44 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Система отметки на КП</title>
-    
-    <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="images/icon-192.png">
-    
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>КП — отметки</title>
+	<style>
+		body { font-family: Arial, sans-serif; padding: 12px; }
+		label { display:block; margin-top:8px; }
+		input, select, button { font-size:16px; padding:6px; margin-top:4px; }
+		#status { margin-top:8px; font-weight:bold; }
+		.entry { border-bottom:1px solid #ddd; padding:8px 0; }
+		.synced { color: green; }
+		.not-synced { color: red; }
+		#syncBtn { margin-top:12px; }
+	</style>
+	<script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div id="offlineIndicator" class="offline-indicator hidden">🔌 Оффлайн</div>
-        
-        <div class="header">
-            <h1>📋 Система отметки</h1>
-            <p id="eventName">Соревнования</p>
-        </div>
-        
-        <div class="status-bar">
-            <span id="connectionStatus">🌐 Онлайн</span>
-            <span id="participantsCount">Участников: 0</span>
-            <span id="currentTime">--:--:--</span>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">Контрольный пункт</div>
-            <select id="kpSelect" class="kp-selector">
-                <option value="">Загрузка...</option>
-            </select>
-            
-            <div class="progress-bar">
-                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
-            </div>
-            <div class="text-center">
-                <span id="passedCount">0</span>/<span id="totalCount">0</span> участников
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">Отметка участника</div>
-            <input type="number" id="participantInput" class="number-input" placeholder="Номер участника" min="1">
-            
-            <div class="quick-buttons">
-                <div class="quick-button" onclick="addDigit('1')">1</div>
-                <div class="quick-button" onclick="addDigit('2')">2</div>
-                <div class="quick-button" onclick="addDigit('3')">3</div>
-                <div class="quick-button" onclick="addDigit('4')">4</div>
-                <div class="quick-button" onclick="addDigit('5')">5</div>
-                <div class="quick-button" onclick="addDigit('6')">6</div>
-                <div class="quick-button" onclick="addDigit('7')">7</div>
-                <div class="quick-button" onclick="addDigit('8')">8</div>
-                <div class="quick-button" onclick="addDigit('9')">9</div>
-                <div class="quick-button" onclick="addDigit('0')">0</div>
-                <div class="quick-button" onclick="clearInput()">⌫</div>
-                <div class="quick-button" onclick="markParticipant()">✅</div>
-            </div>
-            
-            <button class="btn btn-success" onclick="markParticipant()">Отметить участника</button>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">Отмеченные участники</div>
-            <div id="participantsList" class="participants-list">
-                <p class="text-center">Нет отмеченных участников</p>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
-                <button class="btn btn-warning" onclick="syncData()">🔄 Синхронизировать</button>
-                <button class="btn btn-danger" onclick="clearData()">🗑️ Очистить</button>
-            </div>
-        </div>
-    </div>
+	<h2>Отметки КП</h2>
 
-    <script src="app.js"></script>
+	<div id="status">Статус: <span id="netStatus">проверяется...</span></div>
+
+	<label for="checkpoint">Контрольный пункт</label>
+	<select id="checkpoint">
+		<option value="CP1">CP1</option>
+		<option value="CP2">CP2</option>
+		<option value="CP3">CP3</option>
+	</select>
+
+	<label for="runner">Номер бегуна</label>
+	<input id="runner" type="number" placeholder="Введите номер" />
+
+	<div>
+		<button id="markBtn">Отметить</button>
+		<button id="syncBtn">Синхронизировать (все)</button>
+	</div>
+
+	<h3>Записи (локально)</h3>
+	<div id="list"></div>
+
+	<script src="app.js"></script>
 </body>
 </html>
